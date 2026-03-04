@@ -1,0 +1,70 @@
+'use client';
+
+import { SessionProvider, useSession, signIn as nextAuthSignIn, signOut as nextAuthSignOut } from 'next-auth/react';
+import { ReactNode } from 'react';
+import { useStore } from '@/lib/store';
+import type { User } from '@/types';
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export function AuthProvider({ children }: AuthProviderProps) {
+  return (
+    <SessionProvider>
+      <AuthContext>{children}</AuthContext>
+    </SessionProvider>
+  );
+}
+
+function AuthContext({ children }: { children: ReactNode }) {
+  const { data: session, status } = useSession();
+  const { setUser } = useStore();
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" />
+      </div>
+    );
+  }
+
+  if (session?.user) {
+    const user: User = {
+      uid: session.user.id || session.user.email || '',
+      email: session.user.email || null,
+      displayName: session.user.name || null,
+      createdAt: new Date(),
+    };
+    setUser(user);
+  } else {
+    setUser(null);
+  }
+
+  return children;
+}
+
+export const useAuth = () => {
+  const { data: session, status } = useSession();
+  
+  const signIn = async (provider?: string) => {
+    await nextAuthSignIn(provider);
+  };
+
+  const signOut = async () => {
+    await nextAuthSignOut();
+  };
+
+  return {
+    user: session?.user ? {
+      uid: session.user.id || session.user.email || '',
+      email: session.user.email || null,
+      displayName: session.user.name || null,
+      createdAt: new Date(),
+    } : null,
+    isLoading: status === 'loading',
+    signIn,
+    signOut,
+    signInWithGoogle: () => nextAuthSignIn('google'),
+  };
+};
