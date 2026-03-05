@@ -29,11 +29,16 @@ export const createItem = async (
   userId: string,
   item: Omit<InventoryItem, 'id' | 'createdAt'>
 ): Promise<string> => {
-  const docRef = await addDoc(itemsCollection(userId), {
-    ...item,
+  const docData: DocumentData = {
+    name: item.name,
+    category: item.category,
+    storageLocation: item.storageLocation,
+    quantity: item.quantity ?? null,
+    unit: item.unit ?? null,
     expiresAt: item.expiresAt ? Timestamp.fromDate(item.expiresAt) : null,
     createdAt: Timestamp.now(),
-  });
+  };
+  const docRef = await addDoc(itemsCollection(userId), docData);
   return docRef.id;
 };
 
@@ -43,10 +48,17 @@ export const updateItem = async (
   updates: Partial<InventoryItem>
 ): Promise<void> => {
   const docRef = doc(db, 'users', userId, INVENTORY_COLLECTION, itemId);
-  const updateData: DocumentData = { ...updates };
-  if (updates.expiresAt) {
-    updateData.expiresAt = Timestamp.fromDate(updates.expiresAt);
+  const updateData: DocumentData = {};
+  
+  if (updates.name !== undefined) updateData.name = updates.name;
+  if (updates.category !== undefined) updateData.category = updates.category;
+  if (updates.storageLocation !== undefined) updateData.storageLocation = updates.storageLocation;
+  if (updates.quantity !== undefined) updateData.quantity = updates.quantity;
+  if (updates.unit !== undefined) updateData.unit = updates.unit;
+  if (updates.expiresAt !== undefined) {
+    updateData.expiresAt = updates.expiresAt ? Timestamp.fromDate(updates.expiresAt) : null;
   }
+  
   await updateDoc(docRef, updateData);
 };
 

@@ -28,11 +28,11 @@ export default function DashboardPage() {
   }, [authLoading, user, router]);
 
   useEffect(() => {
-    if (user) {
+    if (user?.uid) {
       const unsubscribe = subscribeToInventory(user.uid);
       return () => unsubscribe();
     }
-  }, [user, subscribeToInventory]);
+  }, [user?.uid, subscribeToInventory]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -53,44 +53,95 @@ export default function DashboardPage() {
   };
 
   const ItemCard = ({ item }: { item: InventoryItem }) => {
+    const [expanded, setExpanded] = useState(false);
     const expiryStatus = getExpiryStatus(item);
     
     return (
-      <div className="flex items-center justify-between p-3 bg-white rounded-lg border shadow-sm">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium truncate">{item.name}</span>
-            {item.quantity && (
-              <span className="text-sm text-gray-500">
-                {item.quantity} {item.unit || 'stk'}
-              </span>
-            )}
+      <div 
+        className="bg-white rounded-lg border shadow-sm cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center justify-between p-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-medium truncate">{item.name}</span>
+              {item.quantity && (
+                <span className="text-sm text-gray-500">
+                  {item.quantity} {item.unit || 'stk'}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-gray-500 capitalize">{item.category}</span>
+              {expiryStatus && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full ${
+                    expiryStatus.status === 'expired'
+                      ? 'bg-red-100 text-red-700'
+                      : expiryStatus.status === 'expiring'
+                      ? 'bg-orange-100 text-orange-700'
+                      : 'bg-yellow-100 text-yellow-700'
+                  }`}
+                >
+                  {expiryStatus.label}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-gray-500 capitalize">{item.category}</span>
-            {expiryStatus && (
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full ${
-                  expiryStatus.status === 'expired'
-                    ? 'bg-red-100 text-red-700'
-                    : expiryStatus.status === 'expiring'
-                    ? 'bg-orange-100 text-orange-700'
-                    : 'bg-yellow-100 text-yellow-700'
-                }`}
-              >
-                {expiryStatus.label}
-              </span>
-            )}
+          <div className="flex items-center gap-1">
+            <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-gray-400 hover:text-red-500"
+              onClick={(e) => {
+                e.stopPropagation();
+                user && removeItem(user.uid, item.id);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-gray-400 hover:text-red-500"
-          onClick={() => user && removeItem(user.uid, item.id)}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        
+        {expanded && (
+          <div className="px-3 pb-3 pt-0 border-t mt-0">
+            <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
+              {item.expiresAt && (
+                <div>
+                  <span className="text-gray-500">Utløpsdato:</span>
+                  <p className="font-medium">
+                    {format(new Date(item.expiresAt), 'dd. MMMM yyyy', { locale: nb })}
+                  </p>
+                </div>
+              )}
+              {item.quantity && (
+                <div>
+                  <span className="text-gray-500">Antall:</span>
+                  <p className="font-medium">{item.quantity} {item.unit || 'stk'}</p>
+                </div>
+              )}
+              <div>
+                <span className="text-gray-500">Kategori:</span>
+                <p className="font-medium capitalize">{item.category}</p>
+              </div>
+              <div>
+                <span className="text-gray-500">Plassering:</span>
+                <p className="font-medium">
+                  {item.storageLocation === 'fridge' && 'Kjøleskap'}
+                  {item.storageLocation === 'pantry' && 'Skap'}
+                  {item.storageLocation === 'freezer' && 'Fryser'}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <span className="text-gray-500">Lagt til:</span>
+                <p className="font-medium">
+                  {format(new Date(item.createdAt), 'dd. MMMM yyyy', { locale: nb })}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { generateText } from 'ai';
+import { createGateway } from 'ai';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const gateway = createGateway({
+  apiKey: process.env.AI_GATEWAY_API_KEY,
 });
 
 interface ChatRequestBody {
@@ -93,19 +94,14 @@ export async function POST(req: NextRequest) {
       },
     ];
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6-20250514',
-      max_tokens: 1024,
+    const { text } = await generateText({
+      model: gateway('anthropic/claude-sonnet-4-20250514'),
       system: systemPrompt,
       messages,
+      maxTokens: 1024,
     });
 
-    const assistantMessage =
-      response.content[0].type === 'text'
-        ? response.content[0].text
-        : 'Beklager, jeg kunne ikke generere et svar akkurat nå.';
-
-    return NextResponse.json({ message: assistantMessage });
+    return NextResponse.json({ message: text });
   } catch (error) {
     console.error('Error in chat API:', error);
     return NextResponse.json(

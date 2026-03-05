@@ -86,9 +86,9 @@ export function AddItemDialog({ open, onOpenChange, defaultLocation = 'fridge' }
         name: name.trim(),
         category,
         storageLocation,
-        quantity: quantity ? parseInt(quantity) : undefined,
-        unit: unit || undefined,
-        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+        quantity: quantity ? parseInt(quantity) : null,
+        unit: unit || null,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
       });
       
       toast.success(`${name} lagt til!`);
