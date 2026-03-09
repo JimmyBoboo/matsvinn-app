@@ -1,13 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { generateText, createGateway } from 'ai';
-import { auth } from '../../firebase/config';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import * as ImagePicker from 'expo-image-picker';
+import { auth, db } from '../../firebase/config';
 import { useStore } from '../../stores/useStore';
+import OpenAI from 'openai';
 
 const gateway = createGateway({
   apiKey: process.env.EXPO_PUBLIC_AI_GATEWAY_API_KEY,
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
 });
 
 const SYSTEM_PROMPT = `Du er en hjelpsom norsk kokkeassistent som heter "MatSvinn Hjelper". Din oppgave er å hjelpe brukere med å lage mat basert på matvarene de har tilgjengelig.
@@ -68,11 +75,128 @@ interface Message {
 export default function ChatScreen() {
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const scrollViewRef = useRef<ScrollView>(null);
   
   const { user, items } = useStore();
   const router = useRouter();
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Tillatelse nødvendig', 'Vi trenger tilgang til kameraet for å ta bilde av kjøleskapet ditt.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0].base64) {
+      await analyzeImage(result.assets[0].base64);
+    }
+  };
+
+  const analyzeImage = async (base64Image: string) => {
+    if (!user) return;
+    
+    setIsAnalyzingImage(true);
+    
+    try {
+      const analysisPrompt = `Du er en AI som analyserer bilder av kjøleskap. Se på bildet og identifiser alle matvarer du kan se. 
+      
+Vennligst gi svaret ditt som en komma-separert liste av ingredienser på norsk. 
+For eksempel: "melk, egg, smør, ost, brød, epler, gulrøtter, kylling"
+Ikke legg til andre forklaringer eller tekst - bare ingrediensene separert med komma.`;
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: analysisPrompt },
+              {
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+              },
+            ],
+          },
+        ],
+      });
+
+      const ingredientsText = response.choices[0]?.message?.content || '';
+      const ingredients = ingredientsText.split(',').map(i => i.trim()).filter(i => i.length > 0);
+
+      const systemMessage: Message = { 
+        id: Date.now().toString(), 
+        role: 'assistant', 
+        content: `Jeg har analysert bildet ditt og funnet følgende ingredienser: ${ingredientsText}. La meg nå finne en oppskrift for deg!` 
+      };
+      setMessages(prev => [...prev, systemMessage]);
+
+      const recipePrompt = `Brukeren har følgende ingredienser: ${ingredientsText}
+      
+Lag en enkel og praktisk oppskrift basert på disse ingrediensene. 
+
+Svar på følgende format (kun JSON, uten markdown):
+{
+  "tittel": "Navn på retten",
+  "ingredienser": ["ingrediens 1", "ingrediens 2"],
+  "steg": ["steg 1", "steg 2", "steg 3"]
+}
+
+Velg en rett som bruker så mange av ingrediensene som mulig. Hvis noe mangler, kan du foreslå det som en ekstra.`;
+
+      setIsLoading(true);
+      try {
+        const { text } = await generateText({
+          model: gateway('anthropic/claude-sonnet-4-20250514'),
+          system: 'Du er en norsk kokkeassistent. Svar ALLTID med kun gyldig JSON, uten markdown eller andre tegn før eller etter.',
+          messages: [{ role: 'user', content: recipePrompt }],
+        });
+
+        let recipe;
+        try {
+          const cleanedText = text.trim();
+          recipe = JSON.parse(cleanedText);
+        } catch {
+          recipe = { tittel: 'Kunne ikke parse oppskrift', ingredienser: [], steg: [text] };
+        }
+
+        const recipeMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `📸 *${recipe.tittel}*\n\n📋 Ingredienser:\n${recipe.ingredienser.map((i: string) => `• ${i}`).join('\n')}\n\n👨‍🍳 Steg:\n${recipe.steg.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`,
+        };
+        setMessages(prev => [...prev, recipeMessage]);
+
+        await addDoc(collection(db, 'recipes'), {
+          userId: user.uid,
+          title: recipe.tittel,
+          ingredients: recipe.ingredienser,
+          steps: recipe.steg,
+          createdAt: serverTimestamp(),
+        });
+
+      } catch (error) {
+        console.error('Recipe generation error:', error);
+        Alert.alert('Feil', 'Kunne ikke generere oppskrift. Sjekk at OpenAI-nøkkelen er riktig.');
+      } finally {
+        setIsAnalyzingImage(false);
+        setIsLoading(false);
+        setTimeout(() => scrollViewRef.current?.scrollToEnd(), 100);
+      }
+    } catch (error) {
+      console.error('Image analysis error:', error);
+      Alert.alert('Feil', 'Kunne ikke analysere bildet. Sjekk at OpenAI-nøkkelen er riktig.');
+      setIsAnalyzingImage(false);
+    }
+  };
 
   const handleSend = async () => {
     if (!message.trim() || !user || isLoading) return;
@@ -118,7 +242,12 @@ export default function ChatScreen() {
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
         <Text style={styles.title}>AI Kokk</Text>
-        <TouchableOpacity onPress={handleSignOut}><Text style={styles.signOutText}>Logg ut</Text></TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 16 }}>
+          <TouchableOpacity onPress={pickImage} disabled={isAnalyzingImage || isLoading}>
+            <Text style={{ fontSize: 20, opacity: isAnalyzingImage || isLoading ? 0.5 : 1 }}>📷</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSignOut}><Text style={styles.signOutText}>Logg ut</Text></TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView ref={scrollViewRef} style={styles.chatList} contentContainerStyle={styles.chatContent}>
@@ -140,6 +269,9 @@ export default function ChatScreen() {
         {isLoading && (
           <View style={styles.loadingBubble}>
             <ActivityIndicator size="small" color="#22c55e" />
+            <Text style={{ marginLeft: 8, color: '#666', fontSize: 14 }}>
+              {isAnalyzingImage ? 'Analyserer bilde...' : 'Skriver...'}
+            </Text>
           </View>
         )}
       </ScrollView>
