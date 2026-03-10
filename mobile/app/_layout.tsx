@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged } from '@react-native-firebase/auth';
 import { auth } from '../firebase/config';
 import { useStore } from '../stores/useStore';
 

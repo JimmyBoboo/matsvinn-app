@@ -34,6 +34,7 @@ interface AppState {
   
   subscribeToInventory: (userId: string) => () => void;
   addItem: (userId: string, item: Omit<InventoryItem, 'id' | 'createdAt'>) => Promise<string>;
+  addItems: (userId: string, items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => Promise<void>;
   removeItem: (userId: string, itemId: string) => Promise<void>;
   
   subscribeToChat: (userId: string) => () => void;
@@ -89,6 +90,21 @@ export const useStore = create<AppState>((set, get) => ({
     
     const docRef = await addDoc(itemsCollection(userId), docData);
     return docRef.id;
+  },
+
+  addItems: async (userId, items) => {
+    const batch = items.map((item) => ({
+      name: item.name,
+      category: item.category,
+      storageLocation: item.storageLocation,
+      quantity: item.quantity ?? null,
+      unit: item.unit ?? null,
+      expiresAt: item.expiresAt ? Timestamp.fromDate(item.expiresAt) : null,
+      createdAt: Timestamp.now(),
+    }));
+    
+    const promises = batch.map((docData) => addDoc(itemsCollection(userId), docData));
+    await Promise.all(promises);
   },
 
   removeItem: async (userId, itemId) => {
